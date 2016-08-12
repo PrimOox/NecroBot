@@ -1,7 +1,6 @@
 ﻿#region using directives
 
 using System;
-using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using PoGo.NecroBot.Logic.Common;
@@ -18,6 +17,7 @@ namespace PoGo.NecroBot.Logic.Tasks
         public static async Task Execute(ISession session, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            await session.Inventory.RefreshCachedInventory();
 
             var pokemons = await session.Inventory.GetPokemons();
 

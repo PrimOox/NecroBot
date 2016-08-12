@@ -1,5 +1,7 @@
 ﻿#region using directives
 
+using System;
+using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using PoGo.NecroBot.CLI.WebSocketHandler;
@@ -11,7 +13,6 @@ using PoGo.NecroBot.Logic.Tasks;
 using SuperSocket.SocketBase;
 using SuperSocket.SocketBase.Config;
 using SuperSocket.WebSocket;
-using System;
 
 #endregion
 
@@ -31,19 +32,29 @@ namespace PoGo.NecroBot.CLI
             var translations = session.Translation;
             _server = new WebSocketServer();
             _websocketHandler = WebSocketEventManager.CreateInstance();
-            var setupComplete = _server.Setup(new ServerConfig
+            var config = new ServerConfig
             {
                 Name = "NecroWebSocket",
-                Ip = "Any",
-                Port = port,
                 Mode = SocketMode.Tcp,
-                Security = "tls",
                 Certificate = new CertificateConfig
                 {
                     FilePath = @"cert.pfx",
                     Password = "necro"
+                },
+            };
+            config.Listeners = new List<ListenerConfig>
+            {
+                new ListenerConfig()
+                {
+                    Ip = "Any", Port = port, Security = "tls"
+                },
+                new ListenerConfig()
+                {
+                    Ip = "Any", Port = port + 1, Security = "none"
                 }
-            });
+            };
+
+            var setupComplete = _server.Setup(config);
 
             if (setupComplete == false)
             {

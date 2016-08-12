@@ -3,9 +3,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using PoGo.NecroBot.Logic.Tasks;
-using PoGo.NecroBot.Logic.Common;
-using PoGo.NecroBot.Logic.Logging;
-using System;
 
 #endregion
 
@@ -13,22 +10,24 @@ namespace PoGo.NecroBot.Logic.State
 {
     public class FarmState : IState
     {
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Await.Warning", "CS4014:Await.Warning")]
+
         public async Task<IState> Execute(ISession session, CancellationToken cancellationToken)
         {
-
-            if (session.LogicSettings.EvolveAllPokemonAboveIv || session.LogicSettings.EvolveAllPokemonWithEnoughCandy)
+            if (session.LogicSettings.EvolveAllPokemonAboveIv || session.LogicSettings.EvolveAllPokemonWithEnoughCandy 
+               || session.LogicSettings.UseLuckyEggsWhileEvolving || session.LogicSettings.KeepPokemonsThatCanEvolve)
             {
                 await EvolvePokemonTask.Execute(session, cancellationToken);
+            }
+
+            if (session.LogicSettings.UseEggIncubators)
+            {
+                await UseIncubatorsTask.Execute(session, cancellationToken);
             }
 
             if (session.LogicSettings.TransferDuplicatePokemon)
             {
                 await TransferDuplicatePokemonTask.Execute(session, cancellationToken);
-            }
-
-            if (session.LogicSettings.AutomaticallyLevelUpPokemon)
-            {
-                await LevelUpPokemonTask.Execute(session, cancellationToken);
             }
 
             if (session.LogicSettings.UseLuckyEggConstantly)
@@ -55,9 +54,9 @@ namespace PoGo.NecroBot.Logic.State
 
             await RecycleItemsTask.Execute(session, cancellationToken);
 
-            if (session.LogicSettings.UseEggIncubators)
+            if (session.LogicSettings.AutomaticallyLevelUpPokemon)
             {
-                await UseIncubatorsTask.Execute(session, cancellationToken);
+                await LevelUpPokemonTask.Execute(session, cancellationToken);
             }
 
             if (session.LogicSettings.UseGpxPathing)

@@ -21,6 +21,7 @@ namespace PoGo.NecroBot.Logic.Tasks
         public static async Task Execute(ISession session, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!session.LogicSettings.CatchPokemon) return;
 
             Logger.Write(session.Translation.GetTranslation(TranslationString.LookingForPokemon), LogLevel.Debug);
 
@@ -29,10 +30,18 @@ namespace PoGo.NecroBot.Logic.Tasks
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                var allitems = await session.Inventory.GetItems();
+                var pokeBallsCount = allitems.FirstOrDefault(i => i.ItemId == ItemId.ItemPokeBall)?.Count;
+                var greatBallsCount = allitems.FirstOrDefault(i => i.ItemId == ItemId.ItemGreatBall)?.Count;
+                var ultraBallsCount = allitems.FirstOrDefault(i => i.ItemId == ItemId.ItemUltraBall)?.Count;
+                var masterBallsCount = allitems.FirstOrDefault(i => i.ItemId == ItemId.ItemMasterBall)?.Count;
+
+                /*
                 var pokeBallsCount = await session.Inventory.GetItemAmountByType(ItemId.ItemPokeBall);
                 var greatBallsCount = await session.Inventory.GetItemAmountByType(ItemId.ItemGreatBall);
                 var ultraBallsCount = await session.Inventory.GetItemAmountByType(ItemId.ItemUltraBall);
                 var masterBallsCount = await session.Inventory.GetItemAmountByType(ItemId.ItemMasterBall);
+                */
 
                 if (pokeBallsCount + greatBallsCount + ultraBallsCount + masterBallsCount == 0)
                 {
@@ -49,25 +58,28 @@ namespace PoGo.NecroBot.Logic.Tasks
 
                 var distance = LocationUtils.CalculateDistanceInMeters(session.Client.CurrentLatitude,
                     session.Client.CurrentLongitude, pokemon.Latitude, pokemon.Longitude);
-                await Task.Delay(distance > 100 ? 3000 : 500, cancellationToken);
+                await Task.Delay(distance > 100 ? 500 : 100, cancellationToken);
 
                 var encounter =
                     await session.Client.Encounter.EncounterPokemon(pokemon.EncounterId, pokemon.SpawnPointId);
 
-                if (encounter.Status == EncounterResponse.Types.Status.EncounterSuccess)
+                if (encounter.Status == EncounterResponse.Types.Status.EncounterSuccess && session.LogicSettings.CatchPokemon)
                 {
                     await CatchPokemonTask.Execute(session, cancellationToken, encounter, pokemon);
                 }
                 else if (encounter.Status == EncounterResponse.Types.Status.PokemonInventoryFull)
                 {
-                    if (session.LogicSettings.TransferDuplicatePokemon)
-                    {
-                        session.EventDispatcher.Send(new WarnEvent
-                        {
-                            Message = session.Translation.GetTranslation(TranslationString.InvFullTransferring)
-                        });
-                        await TransferDuplicatePokemonTask.Execute(session, cancellationToken);
-                    }
+					if (session.LogicSettings.TransferDuplicatePokemon || session.LogicSettings.TransferWeakPokemon)
+					{
+						session.EventDispatcher.Send(new WarnEvent
+						{
+							Message = session.Translation.GetTranslation(TranslationString.InvFullTransferring)
+						});
+						if(session.LogicSettings.TransferDuplicatePokemon)
+							await TransferDuplicatePokemonTask.Execute(session, cancellationToken);
+						if(session.LogicSettings.TransferWeakPokemon)
+							await TransferWeakPokemonTask.Execute(session, cancellationToken);
+					}
                     else
                         session.EventDispatcher.Send(new WarnEvent
                         {
@@ -95,7 +107,7 @@ namespace PoGo.NecroBot.Logic.Tasks
         {
             var mapObjects = await session.Client.Map.GetMapObjects();
 
-            var pokemons = mapObjects.MapCells.SelectMany(i => i.CatchablePokemons)
+            var pokemons = mapObjects.Item1.MapCells.SelectMany(i => i.CatchablePokemons)
                 .OrderBy(
                     i =>
                         LocationUtils.CalculateDistanceInMeters(session.Client.CurrentLatitude,

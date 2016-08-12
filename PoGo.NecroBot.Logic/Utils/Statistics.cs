@@ -3,8 +3,12 @@
 #region using directives
 
 using System;
-using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
+using Google.Protobuf.Collections;
+using PoGo.NecroBot.Logic.Logging;
+using PoGo.NecroBot.Logic.State;
+using POGOProtos.Inventory.Item;
 using POGOProtos.Networking.Responses;
 
 #endregion
@@ -20,14 +24,15 @@ namespace PoGo.NecroBot.Logic.Utils
     public class Statistics
     {
         private readonly DateTime _initSessionDateTime = DateTime.Now;
-
+        
         private StatsExport _exportStats;
         private string _playerName;
         public int TotalExperience;
         public int TotalItemsRemoved;
         public int TotalPokemons;
-        public int TotalPokemonsTransfered;
+        public int TotalPokemonTransferred;
         public int TotalStardust;
+        public int LevelForRewards = -1;
 
         public void Dirty(Inventory inventory)
         {
@@ -58,7 +63,37 @@ namespace PoGo.NecroBot.Logic.Utils
                     hours = Math.Truncate(TimeSpan.FromHours(time).TotalHours);
                     minutes = TimeSpan.FromHours(time).Minutes;
                 }
+                
+                if( LevelForRewards == -1 || stat.Level >= LevelForRewards )
+                {
+                    LevelUpRewardsResponse Result = Execute( inventory ).Result;
 
+                    if( Result.ToString().ToLower().Contains( "awarded_already" ) )
+                        LevelForRewards = stat.Level + 1;
+
+                    if( Result.ToString().ToLower().Contains( "success" ) )
+                    {
+                        Logger.Write( "Leveled up: " + stat.Level, LogLevel.Info );
+
+                        RepeatedField<ItemAward> items = Result.ItemsAwarded;
+
+                        if( items.Any<ItemAward>() )
+                        {
+                            Logger.Write( "- Received Items -", LogLevel.Info );
+                            foreach( ItemAward item in items )
+                            {
+                                Logger.Write( $"[ITEM] {item.ItemId} x {item.ItemCount} ", LogLevel.Info );
+                            }
+                        }
+                    }
+                }
+                var Result2 = Execute(inventory).Result;
+                LevelForRewards = stat.Level;
+                if (Result2.ToString().ToLower().Contains("success"))
+                {
+                    string[] tokens = Result2.Result.ToString().Split(new[] { "itemId" }, StringSplitOptions.None);
+                    Logging.Logger.Write("Items Awarded:" + Result2.ItemsAwarded.ToString());
+                }
                 output = new StatsExport
                 {
                     Level = stat.Level,
@@ -71,6 +106,18 @@ namespace PoGo.NecroBot.Logic.Utils
             return output;
         }
 
+        public async Task<LevelUpRewardsResponse> Execute(ISession ctx)
+        {
+            var Result = await ctx.Inventory.GetLevelUpRewards(LevelForRewards);
+            return Result;
+        }
+
+        public async Task<LevelUpRewardsResponse> Execute( Inventory inventory )
+        {
+            var Result = await inventory.GetLevelUpRewards( inventory );
+            return Result;
+        }
+
         public double GetRuntime()
         {
             return (DateTime.Now - _initSessionDateTime).TotalSeconds/3600;
@@ -80,9 +127,10 @@ namespace PoGo.NecroBot.Logic.Utils
         {
             var xpStats = string.Format(xpTemplate, _exportStats.Level, _exportStats.HoursUntilLvl,
                 _exportStats.MinutesUntilLevel, _exportStats.CurrentXp, _exportStats.LevelupXp);
+
             return string.Format(template, _playerName, FormatRuntime(), xpStats, TotalExperience/GetRuntime(),
                 TotalPokemons/GetRuntime(),
-                TotalStardust, TotalPokemonsTransfered, TotalItemsRemoved);
+                TotalStardust, TotalPokemonTransferred, TotalItemsRemoved);
         }
 
         public static int GetXpDiff(int level)

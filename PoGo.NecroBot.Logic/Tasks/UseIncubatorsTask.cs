@@ -1,4 +1,4 @@
-﻿#region using directives
+#region using directives
 
 using System;
 using System.Collections.Generic;
@@ -73,11 +73,16 @@ namespace PoGo.NecroBot.Logic.Tasks
                 if (incubator.PokemonId == 0)
                 {
                     // Unlimited incubators prefer short eggs, limited incubators prefer long eggs
-                    var egg = incubator.ItemId == ItemId.ItemIncubatorBasicUnlimited
+                    // Special case: If only one incubator is available at all, it will prefer long eggs
+                    var egg = (incubator.ItemId == ItemId.ItemIncubatorBasicUnlimited && incubators.Count > 1)
                         ? unusedEggs.FirstOrDefault()
                         : unusedEggs.LastOrDefault();
 
                     if (egg == null)
+                        continue;
+
+                    //avoid using 2/5 km eggs with limited incubator
+                    if (egg.EggKmWalkedTarget < session.LogicSettings.UseEggIncubatorMinKm && incubator.ItemId != ItemId.ItemIncubatorBasicUnlimited)
                         continue;
 
                     var response = await session.Client.Inventory.UseItemEggIncubator(incubator.Id, egg.Id);

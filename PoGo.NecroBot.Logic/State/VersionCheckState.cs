@@ -1,6 +1,7 @@
 ﻿#region using directives
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -13,6 +14,7 @@ using Newtonsoft.Json.Linq;
 using PoGo.NecroBot.Logic.Common;
 using PoGo.NecroBot.Logic.Event;
 using PoGo.NecroBot.Logic.Logging;
+using PoGo.NecroBot.Logic.Utils;
 
 #endregion
 
@@ -21,7 +23,7 @@ namespace PoGo.NecroBot.Logic.State
     public class VersionCheckState : IState
     {
         public const string VersionUri =
-            "https://cdn.rawgit.com/NECROBOTIO/NecroBot/master/PoGo.NecroBot.Logic/Properties/AssemblyInfo.cs";
+            "https://rawgit.com/NECROBOTIO/NecroBot/master/PoGo.NecroBot.Logic/Properties/AssemblyInfo.cs";
 
         public const string LatestReleaseApi =
             "https://api.github.com/repos/NECROBOTIO/NecroBot/releases/latest";
@@ -36,26 +38,51 @@ namespace PoGo.NecroBot.Logic.State
             cancellationToken.ThrowIfCancellationRequested();
 
             await CleanupOldFiles();
-            var autoUpdate = session.LogicSettings.AutoUpdate;
-            var needupdate = IsLatest();
-            if (!needupdate || !autoUpdate)
+
+            if( !session.LogicSettings.CheckForUpdates )
             {
-                if (!needupdate)
+                session.EventDispatcher.Send( new UpdateEvent
                 {
-                    session.EventDispatcher.Send(new UpdateEvent
-                    {
-                        Message =
-                            session.Translation.GetTranslation(TranslationString.GotUpToDateVersion, RemoteVersion)
-                    });
-                    return new LoginState();
-                }
-                session.EventDispatcher.Send(new UpdateEvent
-                {
-                    Message = session.Translation.GetTranslation(TranslationString.AutoUpdaterDisabled, LatestRelease)
-                });
+                    Message = session.Translation.GetTranslation( TranslationString.CheckForUpdatesDisabled, Assembly.GetExecutingAssembly().GetName().Version.ToString( 3 ) )
+                } );
 
                 return new LoginState();
             }
+
+            var autoUpdate = session.LogicSettings.AutoUpdate;
+            var isLatest = IsLatest();
+            if ( isLatest )
+            {
+                session.EventDispatcher.Send(new UpdateEvent
+                {
+                    Message =
+                        session.Translation.GetTranslation(TranslationString.GotUpToDateVersion, Assembly.GetExecutingAssembly().GetName().Version.ToString(3))
+                });
+                return new LoginState();
+            } else if ( !autoUpdate )
+            {
+                Logger.Write( "New update detected, would you like to update? Y/N", LogLevel.Update );
+
+                bool boolBreak = false;
+                while( !boolBreak )
+                {
+                    string strInput = Console.ReadLine().ToLower();
+
+                    switch( strInput )
+                    {
+                        case "y":
+                            boolBreak = true;
+                            break;
+                        case "n":
+                            Logger.Write( "Update Skipped", LogLevel.Update );
+                            return new LoginState();
+                        default:
+                            Logger.Write( session.Translation.GetTranslation( TranslationString.PromptError, "Y", "N" ), LogLevel.Error );
+                            continue;
+                    }
+                }
+            }
+
             session.EventDispatcher.Send(new UpdateEvent
             {
                 Message = session.Translation.GetTranslation(TranslationString.DownloadingUpdate)
@@ -95,13 +122,8 @@ namespace PoGo.NecroBot.Logic.State
                 Message = session.Translation.GetTranslation(TranslationString.UpdateFinished)
             });
 
-            if (TransferConfig(baseDir, session))
-                session.EventDispatcher.Send(new UpdateEvent
-                {
-                    Message = session.Translation.GetTranslation(TranslationString.FinishedTransferringConfig)
-                });
-
-            await Task.Delay(2000, cancellationToken);
+            if( TransferConfig( baseDir, session ) )
+                Utils.ErrorHandler.ThrowFatalError( session.Translation.GetTranslation( TranslationString.FinishedTransferringConfig ), 5, LogLevel.Update );
 
             Process.Start(Assembly.GetEntryAssembly().Location);
             Environment.Exit(-1);
@@ -155,7 +177,7 @@ namespace PoGo.NecroBot.Logic.State
 
         private static string DownloadServerVersion()
         {
-            using (var wC = new WebClient())
+            using (var wC = new NecroWebClient())
             {
                 return wC.DownloadString(VersionUri);
             }
@@ -167,29 +189,27 @@ namespace PoGo.NecroBot.Logic.State
         }
 
 
-        public bool IsLatest()
+        public static bool IsLatest()
         {
             try
             {
                 var regex = new Regex(@"\[assembly\: AssemblyVersion\(""(\d{1,})\.(\d{1,})\.(\d{1,})""\)\]");
                 var match = regex.Match(DownloadServerVersion());
-
+                
                 if (!match.Success)
                     return false;
 
                 var gitVersion = new Version($"{match.Groups[1]}.{match.Groups[2]}.{match.Groups[3]}");
                 RemoteVersion = gitVersion;
                 if (gitVersion >= Assembly.GetExecutingAssembly().GetName().Version)
-                {
-                    return true;
-                }
+                    return false;
             }
             catch (Exception)
             {
                 return true; //better than just doing nothing when git server down
             }
 
-            return false;
+            return true;
         }
 
         public static bool MoveAllFiles(string sourceFolder, string destFolder)
@@ -248,30 +268,85 @@ namespace PoGo.NecroBot.Logic.State
             var newConf = GetJObject(Path.Combine(configDir, "config.json"));
             var newAuth = GetJObject(Path.Combine(configDir, "auth.json"));
 
-            TransferJson(oldConf, newConf);
+            List<JProperty> lstNewOptions = TransferJson(oldConf, newConf);
             TransferJson(oldAuth, newAuth);
-
+            
             File.WriteAllText(Path.Combine(configDir, "config.json"), newConf.ToString());
             File.WriteAllText(Path.Combine(configDir, "auth.json"), newAuth.ToString());
+
+            if( lstNewOptions != null && lstNewOptions.Count > 0 )
+            {
+                Console.Write( "\n" );
+                Logger.Write( "### New Options found ###", LogLevel.New );
+
+                foreach( JProperty prop in lstNewOptions )
+                    Logger.Write( prop.ToString(), LogLevel.New );
+
+                Logger.Write( "Would you like to open the Config file? Y/N", LogLevel.Info );
+                
+                while( true )
+                {
+                    string strInput = Console.ReadLine().ToLower();
+
+                    switch( strInput )
+                    {
+                        case "y":
+                            Process.Start( Path.Combine( configDir, "config.json" ) );
+                            return true;
+                        case "n":
+                            Utils.ErrorHandler.ThrowFatalError( session.Translation.GetTranslation( TranslationString.FinishedTransferringConfig ), 5, LogLevel.Update, true );
+                            return true;
+                        default:
+                            Logger.Write( session.Translation.GetTranslation( TranslationString.PromptError, "y", "n" ), LogLevel.Error );
+                            continue;
+                    }
+                }
+            }
+            
             return true;
         }
 
-        private static void TransferJson(JObject oldFile, JObject newFile)
+        private static List<JProperty> TransferJson(JObject oldFile, JObject newFile)
         {
             try
             {
-                foreach (var newProperty in newFile.Properties())
+                // Figuring out the best method to detect new settings \\
+                List<JProperty> lstNewOptions = new List<JProperty>();
+                
+                foreach( var newProperty in newFile.Properties() )
+                {
+                    bool boolFound = false;
+                    
+                    foreach( var oldProperty in oldFile.Properties() )
+                    {
+                        if( newProperty.Name.Equals( oldProperty.Name ) )
+                        {
+                            boolFound = true;
+                            newFile[ newProperty.Name ] = oldProperty.Value;
+                            break;
+                        }
+                    }
+
+                    if( !boolFound )
+                        lstNewOptions.Add( newProperty );
+                }
+
+                return lstNewOptions;
+
+                /*foreach (var newProperty in newFile.Properties())
                     foreach (var oldProperty in oldFile.Properties())
                         if (newProperty.Name.Equals(oldProperty.Name))
                         {
                             newFile[newProperty.Name] = oldProperty.Value;
                             break;
-                        }
+                        }*/
             }
-            catch
+            catch( Exception error )
             {
-                // ignored
+                Console.WriteLine( error.Message );
             }
+
+            return null;
         }
 
         public static bool UnpackFile(string sourceTarget, string destPath)

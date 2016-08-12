@@ -15,16 +15,18 @@ namespace PoGo.NecroBot.Logic.Logging
         private static string _path;
         private static DateTime _lastLogTime;
         private static readonly IList<string> LogbufferList = new List<string>();
+        private static string _lastLogMessage;
+        private static bool _isGui;
 
         private static void Log(string message, bool force = false)
         {
             lock (LogbufferList)
             {
-                if (_lastLogTime.AddSeconds(60) < DateTime.Now && !force)
-                {
-                    LogbufferList.Add(message);
+                LogbufferList.Add(message);
+
+                if (_lastLogTime.AddSeconds(60).Ticks > DateTime.Now.Ticks && !force)
                     return;
-                }
+
                 using (
                     var log =
                         File.AppendText(Path.Combine(_path,
@@ -37,6 +39,7 @@ namespace PoGo.NecroBot.Logic.Logging
                     }
                     _lastLogTime = DateTime.Now;
                     log.Flush();
+                    LogbufferList.Clear();
                 }
             }
         }
@@ -47,12 +50,16 @@ namespace PoGo.NecroBot.Logic.Logging
         ///     unset.
         /// </summary>
         /// <param name="logger"></param>
-        public static void SetLogger(ILogger logger, string subPath = "")
+        public static void SetLogger(ILogger logger, string subPath = "", bool isGui = false)
         {
             _logger = logger;
-            _path = Path.Combine(Directory.GetCurrentDirectory(), subPath, "Logs");
-            Directory.CreateDirectory(_path);
-            Log($"Initializing Rocket logger at time {DateTime.Now}...");
+            _isGui = isGui;
+            if (!_isGui)
+            {
+                _path = Path.Combine(Directory.GetCurrentDirectory(), subPath, "Logs");
+                Directory.CreateDirectory(_path);
+                Log($"Initializing NecroBot logger at time {DateTime.Now}...");
+            }
         }
 
         /// <summary>
@@ -72,10 +79,18 @@ namespace PoGo.NecroBot.Logic.Logging
         /// <param name="color">Optional. Default is automatic color.</param>
         public static void Write(string message, LogLevel level = LogLevel.Info, ConsoleColor color = ConsoleColor.Black, bool force = false)
         {
-            if (_logger == null)
+            if (_logger == null || _lastLogMessage == message)
                 return;
+            _lastLogMessage = message;
             _logger.Write(message, level, color);
-            Log(string.Concat($"[{DateTime.Now.ToString("HH:mm:ss")}] ", message, force));
+
+            if (!_isGui)
+                Log(string.Concat($"[{DateTime.Now.ToString("HH:mm:ss")}] ", message), force);
+        }
+
+        public static void lineSelect(int lineChar = 0, int linesUp = 1)
+        {
+            _logger.lineSelect(lineChar, linesUp);
         }
     }
 
@@ -90,11 +105,15 @@ namespace PoGo.NecroBot.Logic.Logging
         Recycling = 6,
         Berry = 7,
         Caught = 8,
-        Transfer = 9,
-        Evolve = 10,
-        Egg = 11,
-        Update = 12,
-        Info = 13,
-        Debug = 14
+        Flee = 9,
+        Transfer = 10,
+        Evolve = 11,
+        Egg = 12,
+        Update = 13,
+        Info = 14,
+        New = 15,
+        SoftBan = 16,
+        LevelUp = 17,
+        Debug = 18,
     }
 }
