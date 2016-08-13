@@ -302,8 +302,7 @@ namespace PoGo.NecroBot.Logic.Tasks
 
                     await GetPokeDexCount.Execute(session, cancellationToken);
 
-                    var newPokestopList = await GetPokeStops(session);
-                    pokestopList.Union(newPokestopList);
+                    pokestopList = await GetPokeStops(session);
                 }
 
                 if (session.LogicSettings.SnipeAtPokestops || session.LogicSettings.UseSnipeLocationServer)
