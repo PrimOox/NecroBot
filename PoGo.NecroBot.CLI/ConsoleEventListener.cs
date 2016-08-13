@@ -129,7 +129,7 @@ namespace PoGo.NecroBot.CLI
         private static void HandleEvent(FortTargetEvent fortTargetEvent, ISession session)
         {
 
-            int intTimeForArrival = (int)(fortTargetEvent.Distance / (session.LogicSettings.WalkingSpeedInKilometerPerHour * 0.5));
+            int intTimeForArrival = (int)Math.Ceiling(fortTargetEvent.Distance / (session.LogicSettings.WalkingSpeedInKilometerPerHour * 0.3));
 
             Logger.Write(
                 session.Translation.GetTranslation(TranslationString.EventFortTargeted, fortTargetEvent.Name,
@@ -291,7 +291,7 @@ namespace PoGo.NecroBot.CLI
             var candy = session.Translation.GetTranslation(TranslationString.DisplayHighestCandy);
 
             Logger.Write(session.Translation.GetTranslation(TranslationString.HighestsPokemoHeader, strHeader), LogLevel.Info, ConsoleColor.Yellow);
-            foreach(var pokemon in displayHighestsPokemonEvent.PokemonList)
+            foreach (var pokemon in displayHighestsPokemonEvent.PokemonList)
             {
                 string strMove1 = session.Translation.GetPokemonMovesetTranslation(pokemon.Item5);
                 string strMove2 = session.Translation.GetPokemonMovesetTranslation(pokemon.Item6);
@@ -301,7 +301,7 @@ namespace PoGo.NecroBot.CLI
                         TranslationString.HighestsPokemoCell,
                         pokemon.Item1.Cp.ToString().PadLeft(4, ' '),
                         pokemon.Item2.ToString().PadLeft(4, ' '),
-                        pokemon.Item3.ToString("0.00"),
+                        pokemon.Item3.ToString("0.00").PadLeft(6, ' '),
                         strPerfect,
                         pokemon.Item4.ToString("00"),
                         strName,
